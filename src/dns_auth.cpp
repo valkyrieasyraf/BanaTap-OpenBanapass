@@ -1,1 +1,101 @@
-'\n#include "dns_auth.h"\n#include <algorithm>\n#include <cctype>\n#include <windows.h>\n\nDNSAuthenticator::DNSAuthenticator() : initialized(false) {\n    loadFromConfig(".\\dns_whitelist.ini");\n    if (allowedDomains.empty()) {\n        // Default domains if config not found\n        addAllowedDomain("game.example.com");\n        addAllowedDomain("api.example.com");\n        addAllowedDomain("auth.example.com");\n    }\n    initialized = true;\n}\n\nvoid DNSAuthenticator::addAllowedDomain(const std::string& domain) {\n    std::string lowerDomain = domain;\n    std::transform(lowerDomain.begin(), lowerDomain.end(), \n                   lowerDomain.begin(), ::tolower);\n    \n    // Check for duplicates\n    if (std::find(allowedDomains.begin(), allowedDomains.end(), lowerDomain) \n        == allowedDomains.end()) {\n        allowedDomains.push_back(lowerDomain);\n    }\n}\n\nvoid DNSAuthenticator::loadFromConfig(const char* configPath) {\n    int count = GetPrivateProfileIntA("domains", "count", 0, configPath);\n    \n    if (count <= 0) return;\n    \n    for (int i = 1; i <= count; i++) {\n        char keyName[32];\n        char domain[256] = {0};\n        sprintf_s(keyName, sizeof(keyName), "domain%d", i);\n        \n        GetPrivateProfileStringA("domains", keyName, "", domain, sizeof(domain), configPath);\n        if (domain[0] != '\0') {\n            addAllowedDomain(domain);\n        }\n    }\n}\n\nbool DNSAuthenticator::isAuthorized(const std::string& hostname) {\n    std::string lowerHost = hostname;\n    std::transform(lowerHost.begin(), lowerHost.end(), \n                   lowerHost.begin(), ::tolower);\n    \n    for (const auto& domain : allowedDomains) {\n        if (lowerHost == domain) {\n            return true;\n        }\n        // Also check for subdomain matching (e.g., sub.domain.com matches domain.com)\n        if (lowerHost.length() > domain.length()) {\n            if (lowerHost.substr(lowerHost.length() - domain.length()) == domain &&\n                lowerHost[lowerHost.length() - domain.length() - 1] == '.') {\n                return true;\n            }\n        }\n    }\n    return false;\n}\n\nbool DNSAuthenticator::validateRequest(const std::string& requestHost) {\n    if (requestHost.empty()) {\n        return false;\n    }\n    \n    // Extract hostname (remove port if present)\n    std::string hostname = requestHost;\n    size_t colonPos = hostname.find(':');\n    if (colonPos != std::string::npos) {\n        hostname = hostname.substr(0, colonPos);\n    }\n    \n    // Remove whitespace\n    hostname.erase(0, hostname.find_first_not_of(" \t\r\n"));\n    hostname.erase(hostname.find_last_not_of(" \t\r\n") + 1);\n    \n    // Check if hostname is in whitelist\n    return isAuthorized(hostname);\n}\n\nint DNSAuthenticator::getWhitelistCount() const {\n    return allowedDomains.size();\n}
+#include "dns_auth.h"
+#include <algorithm>
+#include <cctype>
+#include <windows.h>
+
+DNSAuthenticator::DNSAuthenticator() : initialized(false) {
+    loadFromConfig(".\\dns_whitelist.ini");
+    
+    if (allowedDomains.empty()) {
+        // Default domains if config not found
+        addAllowedDomain("game.example.com");
+        addAllowedDomain("api.example.com");
+        addAllowedDomain("auth.example.com");
+    }
+    
+    initialized = true;
+}
+
+void DNSAuthenticator::addAllowedDomain(const std::string& domain) {
+    std::string lowerDomain = domain;
+    std::transform(
+        lowerDomain.begin(), 
+        lowerDomain.end(), 
+        lowerDomain.begin(), 
+        ::tolower
+    );
+    
+    // Check for duplicates
+    if (std::find(allowedDomains.begin(), allowedDomains.end(), lowerDomain) == allowedDomains.end()) {
+        allowedDomains.push_back(lowerDomain);
+    }
+}
+
+void DNSAuthenticator::loadFromConfig(const char* configPath) {
+    int count = GetPrivateProfileIntA("domains", "count", 0, configPath);
+    
+    if (count <= 0) return;
+    
+    for (int i = 1; i <= count; i++) {
+        char keyName[32];
+        char domain[256] = {0};
+        sprintf_s(keyName, sizeof(keyName), "domain%d", i);
+        
+        GetPrivateProfileStringA("domains", keyName, "", domain, sizeof(domain), configPath);
+        
+        if (domain[0] != '\0') {
+            addAllowedDomain(domain);
+        }
+    }
+}
+
+bool DNSAuthenticator::isAuthorized(const std::string& hostname) {
+    std::string lowerHost = hostname;
+    std::transform(
+        lowerHost.begin(), 
+        lowerHost.end(), 
+        lowerHost.begin(), 
+        ::tolower
+    );
+    
+    for (const auto& domain : allowedDomains) {
+        if (lowerHost == domain) {
+            return true;
+        }
+        
+        // Also check for subdomain matching (e.g., sub.domain.com matches domain.com)
+        if (lowerHost.length() > domain.length()) {
+            if (lowerHost.substr(lowerHost.length() - domain.length()) == domain &&
+                lowerHost[lowerHost.length() - domain.length() - 1] == '.') {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+bool DNSAuthenticator::validateRequest(const std::string& requestHost) {
+    if (requestHost.empty()) {
+        return false;
+    }
+    
+    // Extract hostname (remove port if present)
+    std::string hostname = requestHost;
+    size_t colonPos = hostname.find(':');
+    
+    if (colonPos != std::string::npos) {
+        hostname = hostname.substr(0, colonPos);
+    }
+    
+    // Remove whitespace
+    hostname.erase(0, hostname.find_first_not_of(" \t\r\n"));
+    hostname.erase(hostname.find_last_not_of(" \t\r\n") + 1);
+    
+    // Check if hostname is in whitelist
+    return isAuthorized(hostname);
+}
+
+int DNSAuthenticator::getWhitelistCount() const {
+    return allowedDomains.size();
+}
